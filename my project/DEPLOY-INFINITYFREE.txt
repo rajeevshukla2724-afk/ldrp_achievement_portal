@@ -1,0 +1,35 @@
+LDRP Achievement Portal - InfinityFree Deployment
+
+1. Before uploading, open:
+   backend/config/database.php
+
+2. Replace ONLY this value:
+   __PUT_YOUR_INFINITYFREE_MYSQL_PASSWORD_HERE__
+   with your InfinityFree MySQL password.
+
+3. Upload/extract the CONTENTS of this ZIP directly into InfinityFree htdocs.
+   Correct: htdocs/index.html
+   Wrong:   htdocs/ldrp-achievement-portal/index.html
+
+4. Database is already configured for:
+   Host: sql110.infinityfree.com
+   Database: if0_43032808_ldrp_achievement
+   Username: if0_43032808
+   Port: 3306 (default)
+
+5. APP_URL is already configured as:
+   https://ldrp-achievement.free.je
+
+6. Do NOT upload your local XAMPP database files as a replacement for the
+   InfinityFree MySQL database. The database has already been imported there.
+
+7. After upload, open:
+   https://ldrp-achievement.free.je/
+
+Initial management accounts:
+   Admin:  admin@ldrp.edu / Admin@123
+   Mentor: mentor@ldrp.edu / Mentor@123
+
+Security:
+- Never send your MySQL password in chat or commit it to GitHub.
+- Change management passwords after deployment if this is a public project.

@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>LDRP-ITR | Achievement Portal</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="css/style.css">
+
+</head>
+
+<body>
+
+<!-- =========================
+     PUBLIC WEBSITE
+========================= -->
+
+<div id="publicSite">
+
+<nav class="navbar">
+    <div class="nav-inner">
+
+        <div class="logo">
+            <div class="logo-mark">L</div>
+            <div>
+                <div class="logo-title">LDRP-ITR</div>
+                <div class="logo-sub">ACHIEVEMENT PORTAL</div>
+            </div>
+        </div>
+
+        <div class="nav-links">
+            <a href="#featured">Achievements</a>
+            <a href="#top">Top Achievers</a>
+            <a href="#categories">Categories</a>
+            <a href="#alumni">Alumni</a>
+        </div>
+
+        <div class="nav-buttons">
+            <button class="btn btn-outline" onclick="openAuth('login')">Sign in</button>
+            <button class="btn btn-gold" onclick="openAuth('signup')">Get started</button>
+        </div>
+
+    </div>
+</nav>
+
+<header class="hero">
+
+    <div class="container">
+
+        <div class="hero-content">
+
+            <div class="eyebrow">
+                L. D. R. P. Institute of Technology & Research
+            </div>
+
+            <h1>
+                Excellence<br>
+                <em>deserves recognition.</em>
+            </h1>
+
+            <p class="hero-description">
+                A distinguished digital archive celebrating the achievements
+                of LDRP-ITR students and alumni — verified, preserved and
+                presented for the institution and its community.
+            </p>
+
+            <div class="hero-actions">
+                <button class="btn btn-gold" onclick="openAuth('signup')">
+                    Submit an Achievement
+                </button>
+
+                <button class="btn btn-outline"
+                    onclick="document.getElementById('featured').scrollIntoView({behavior:'smooth'})">
+                    Explore Achievements
+                </button>
+            </div>
+
+            <div class="hero-note">
+                <span></span>
+                Verified achievements • Students • Alumni
+            </div>
+
+        </div>
+
+    </div>
+
+</header>
+
+<div class="stats">
+    <div class="container">
+        <div class="stats-box" id="statRow"></div>
+    </div>
+</div>
+
+<section class="search-section">
+    <div class="container">
+
+        <div class="search-box">
+
+            <input
+                id="searchInput"
+                placeholder="Search achievements, names or departments..."
+            >
+
+            <select id="filterCat">
+                <option value="">All categories</option>
+            </select>
+
+            <select id="filterType">
+                <option value="">Students & Alumni</option>
+                <option value="Student">Students</option>
+                <option value="Alumni">Alumni</option>
+            </select>
+
+            <button class="btn btn-gold" onclick="renderFeatured()">
+                Search
+            </button>
+
+        </div>
+
+    </div>
+</section>
+
+<section class="section" id="featured">
+
+    <div class="container">
+
+        <div class="section-header">
+
+            <div>
+                <div class="section-label">Institutional Highlights</div>
+                <h2 class="section-title">Featured Achievements</h2>
+                <p class="section-description">
+                    Distinguished achievements selected for recognition.
+                </p>
+            </div>
+
+        </div>
+
+        <div class="achievement-grid" id="featuredGrid"></div>
+
+    </div>
+
+</section>
+
+<section class="section section-dark" id="top">
+
+    <div class="container">
+
+        <div class="section-header">
+
+            <div>
+                <div class="section-label">Recognition</div>
+                <h2 class="section-title">Top Achievers</h2>
+                <p class="section-description">
+                    Leading contributors based on verified achievement points.
+                </p>
+            </div>
+
+        </div>
+
+        <div class="top-list" id="topList"></div>
+
+    </div>
+
+</section>
+
+<section class="section">
+
+    <div class="container">
+
+        <div class="section-header">
+
+            <div>
+                <div class="section-label">Latest Recognition</div>
+                <h2 class="section-title">Recent Achievements</h2>
+                <p class="section-description">
+                    Recently verified achievements from the LDRP-ITR community.
+                </p>
+            </div>
+
+        </div>
+
+        <div class="achievement-grid" id="recentGrid"></div>
+
+    </div>
+
+</section>
+
+<section class="section" id="categories" style="background:#f2efe7;">
+
+    <div class="container">
+
+        <div class="section-header">
+
+            <div>
+                <div class="section-label">Explore</div>
+                <h2 class="section-title">Achievement Categories</h2>
+                <p class="section-description">
+                    Discover excellence across different fields.
+                </p>
+            </div>
+
+        </div>
+
+        <div class="category-grid" id="catGrid"></div>
+
+    </div>
+
+</section>
+
+<section class="section" id="alumni">
+
+    <div class="container">
+
+        <div class="section-header">
+
+            <div>
+                <div class="section-label">Beyond Graduation</div>
+                <h2 class="section-title">Alumni Highlights</h2>
+                <p class="section-description">
+                    Celebrating the impact of LDRP-ITR graduates.
+                </p>
+            </div>
+
+        </div>
+
+        <div class="achievement-grid" id="alumniGrid"></div>
+
+    </div>
+
+</section>
+
+<footer class="footer">
+
+    <div class="container">
+
+        <div class="footer-inner">
+
+            <div>
+                <div class="footer-brand">LDRP-ITR</div>
+                <div class="footer-small">
+                    Achievement Portal — celebrating institutional excellence.
+                </div>
+            </div>
+
+            <div class="footer-small">
+                Student • Mentor • Alumni • Administration
+            </div>
+
+        </div>
+
+        <div class="footer-bottom">
+            <span>© 2026 LDRP Institute of Technology & Research</span>
+            <span>Achievement Portal</span>
+        </div>
+
+    </div>
+
+</footer>
+
+</div>
+
+
+<!-- =========================
+     AUTH
+========================= -->
+
+<div class="auth-screen hide" id="authScreen">
+
+    <div class="auth-card">
+
+        <button class="auth-back" onclick="closeAuth()">
+            ← Back to portal
+        </button>
+
+        <h2 id="authTitle">Sign in</h2>
+
+        <p class="auth-sub" id="authSub">
+            Access your personal achievement dashboard.
+        </p>
+
+        <div class="auth-field">
+
+            <label>ACCOUNT TYPE</label>
+
+            <div class="role-grid">
+
+                <button class="role-btn active"
+                    onclick="pickRole(this,'student')">
+                    Student / Alumni
+                </button>
+
+                <button class="role-btn"
+                    onclick="pickRole(this,'mentor')">
+                    Mentor
+                </button>
+
+                <button class="role-btn"
+                    onclick="pickRole(this,'admin')">
+                    Admin
+                </button>
+
+            </div>
+
+        </div>
+
+        <div class="auth-field">
+            <label>EMAIL ADDRESS</label>
+            <input id="authEmail"
+                placeholder="you@ldrp.ac.in">
+        </div>
+
+        <div class="auth-field">
+            <label>PASSWORD</label>
+            <input 
+            type="password"
+            id="authPassword"
+            placeholder="••••••••"
+                >
+        </div>
+
+        <button class="btn btn-gold auth-submit"
+            onclick="doLogin()">
+            Continue to Dashboard
+        </button>
+
+        <button
+            type="button"
+            id="forgotPasswordLink"
+            onclick="showForgotPassword()"
+            style="display:block;width:100%;margin-top:10px;border:0;background:none;color:#8a6a22;text-decoration:underline;cursor:pointer;font:inherit;"
+        >
+            Forgot password?
+        </button>
+
+        <div class="auth-note">
+            Use your registered LDRP-ITR account credentials.
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- =========================
+     DASHBOARD
+========================= -->
+
+<div class="app-shell hide" id="appShell">
+
+    <div class="app-bar">
+
+        <div class="logo">
+
+            <div class="logo-mark">L</div>
+
+            <div>
+                <div class="logo-title">LDRP-ITR</div>
+                <div class="logo-sub" id="roleLabel">
+                    STUDENT DASHBOARD
+                </div>
+            </div>
+
+        </div>
+
+        <div style="display:flex;align-items:center;gap:15px;">
+
+            <span style="font-size:17px;">◉</span>
+
+            <button class="btn btn-outline"
+                onclick="logout()">
+                Log out
+            </button>
+
+        </div>
+
+    </div>
+
+    <div class="app-layout">
+
+        <aside class="sidebar" id="sidebar"></aside>
+
+        <main class="app-main" id="appMain"></main>
+
+    </div>
+
+</div>
+
+
+<div class="toast" id="toast"></div>
+
+
+<script src="js/app.js?v=20260928-password-fix"></script>
+</body>
+</html>
