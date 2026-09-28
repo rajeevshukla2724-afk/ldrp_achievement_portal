@@ -8,7 +8,7 @@ let authMode = "login";
 
 const FALLBACK_CATEGORY_ICONS = {
     Academics: "🎓",
-    Sports: "🏅",
+    Sports: "🏆",
     Hackathons: "💻",
     Research: "🔬",
     Placements: "💼",
@@ -26,7 +26,17 @@ async function api(path, options = {}) {
             ...options
         });
 
-        const data = await response.json();
+        const text = await response.text();
+
+        let data;
+
+        try {
+            data = JSON.parse(text);
+        } catch {
+            throw new Error(
+                "The server returned an invalid response. Make sure the PHP backend is running."
+            );
+        }
 
         if (!response.ok || !data.success) {
             throw new Error(data.message || "Something went wrong.");
@@ -35,7 +45,9 @@ async function api(path, options = {}) {
         return data;
     } catch (error) {
         if (error instanceof TypeError) {
-            throw new Error("Cannot connect to the backend. Start Apache in XAMPP.");
+            throw new Error(
+                "Cannot connect to the backend. Make sure the PHP server is running."
+            );
         }
 
         throw error;
@@ -65,9 +77,10 @@ function escapeHTML(value) {
 }
 
 function initials(name = "") {
-    return name
+    return String(name)
         .trim()
         .split(/\s+/)
+        .filter(Boolean)
         .map(word => word[0])
         .slice(0, 2)
         .join("")
@@ -84,21 +97,31 @@ function getDescription(a) {
 
 function getDate(a) {
     if (a.achievement_date) {
-        return new Date(`${a.achievement_date}T00:00:00`).toLocaleDateString("en-IN", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric"
-        });
+        const date = new Date(`${a.achievement_date}T00:00:00`);
+
+        if (!Number.isNaN(date.getTime())) {
+            return date.toLocaleDateString("en-IN", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric"
+            });
+        }
     }
 
-    if (a.date) return a.date;
+    if (a.date) {
+        return a.date;
+    }
 
     if (a.created_at) {
-        return new Date(a.created_at).toLocaleDateString("en-IN", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric"
-        });
+        const date = new Date(a.created_at);
+
+        if (!Number.isNaN(date.getTime())) {
+            return date.toLocaleDateString("en-IN", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric"
+            });
+        }
     }
 
     return "-";
@@ -109,20 +132,26 @@ function getRoleLabel(role) {
     if (role === "student") return "Student";
     if (role === "mentor") return "Mentor";
     if (role === "admin") return "Admin";
-    return role;
+    return role || "";
 }
 
 function verifiedBadge() {
     return `
         <span class="badge-verified">
             <svg viewBox="0 0 24 24" fill="none">
-                <path d="M9 12l2 2 4-4"
+                <path
+                    d="M9 12l2 2 4-4"
                     stroke="#1d7a52"
                     stroke-width="2.4"
-                    stroke-linecap="round"/>
-                <circle cx="12" cy="12" r="9.5"
+                    stroke-linecap="round"
+                />
+                <circle
+                    cx="12"
+                    cy="12"
+                    r="9.5"
                     stroke="#1d7a52"
-                    stroke-width="1.6"/>
+                    stroke-width="1.6"
+                />
             </svg>
             Verified
         </span>
@@ -144,9 +173,11 @@ function achvCard(a) {
     const organization = escapeHTML(a.organization || "");
     const position = escapeHTML(a.position || "");
     const attachment = String(a.certificate_path || "");
+
     const attachmentUrl = attachment
         ? `backend/${attachment.replace(/^\/+/, "")}`
         : "";
+
     const isImage = /\.(jpg|jpeg|png)$/i.test(attachment);
 
     return `
@@ -207,24 +238,40 @@ function achvCard(a) {
 async function loadCategories() {
     const result = await apiGet("categories/list.php");
 
-    CATEGORIES = (result.data || []).map(category => ({
-        id: Number(category.id),
-        n: category.name,
-        ic: category.icon || FALLBACK_CATEGORY_ICONS[category.name] || "◆",
-        c: Number(category.entries || 0)
-    }));
+    CATEGORIES = (result.data || []).map(category => {
+        const name = String(category.name || "").trim();
+
+        return {
+            id: Number(category.id),
+            n: name,
+            ic: FALLBACK_CATEGORY_ICONS[name] || "✦",
+            c: Number(category.entries || 0)
+        };
+    });
 }
 
 async function loadPublicAchievements() {
     const result = await apiGet("achievements/list.php");
 
-    achievements = result.data || [];
+    achievements = Array.isArray(result.data)
+        ? result.data
+        : [];
 }
 
 function renderStats() {
-    const approvedCount = achievements.length;
+    const statRow = document.getElementById("statRow");
 
-    document.getElementById("statRow").innerHTML = `
+    if (!statRow) return;
+
+    const approvedCount = achievements.filter(
+        a => a.status === "approved"
+    ).length;
+
+    const featuredCount = achievements.filter(
+        a => Number(a.featured) === 1
+    ).length;
+
+    statRow.innerHTML = `
         <div class="stat">
             <div class="num">${approvedCount}</div>
             <div class="lbl">Verified Achievements</div>
@@ -236,7 +283,7 @@ function renderStats() {
         </div>
 
         <div class="stat">
-            <div class="num">${achievements.filter(a => Number(a.featured) === 1).length}</div>
+            <div class="num">${featuredCount}</div>
             <div class="lbl">Featured Achievements</div>
         </div>
 
@@ -250,6 +297,8 @@ function renderStats() {
 function renderCategories() {
     const grid = document.getElementById("catGrid");
 
+    if (!grid) return;
+
     grid.innerHTML = CATEGORIES.map(category => `
         <div
             class="cat-tile"
@@ -261,14 +310,25 @@ function renderCategories() {
             "
         >
             <div class="ic">${category.ic}</div>
-            <div class="n">${escapeHTML(category.n)}</div>
-            <div class="c">${category.c} entries</div>
+
+            <div class="n">
+                ${escapeHTML(category.n)}
+            </div>
+
+            <div class="c">
+                ${category.c}
+                ${Number(category.c) === 1 ? "entry" : "entries"}
+            </div>
         </div>
     `).join("");
 
     const select = document.getElementById("filterCat");
 
-    select.innerHTML = `<option value="">All categories</option>`;
+    if (!select) return;
+
+    select.innerHTML = `
+        <option value="">All categories</option>
+    `;
 
     CATEGORIES.forEach(category => {
         select.innerHTML += `
@@ -280,36 +340,51 @@ function renderCategories() {
 }
 
 function renderFeatured() {
-    const search =
-        (document.getElementById("searchInput").value || "")
+    const searchInput = document.getElementById("searchInput");
+    const filterCat = document.getElementById("filterCat");
+    const filterType = document.getElementById("filterType");
+    const featuredGrid = document.getElementById("featuredGrid");
+
+    if (!featuredGrid) return;
+
+    const search = (
+        searchInput?.value || ""
+    )
         .trim()
         .toLowerCase();
 
     const categoryId =
-        document.getElementById("filterCat").value;
+        filterCat?.value || "";
 
     const type =
-        document.getElementById("filterType").value;
+        filterType?.value || "";
+
+    const backendRole =
+        type === "Student"
+            ? "student"
+            : type === "Alumni"
+                ? "alumni"
+                : "";
 
     const list = achievements.filter(a => {
+        const searchableText = [
+            a.name,
+            a.title,
+            a.department,
+            a.description,
+            a.category
+        ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
 
         const matchesSearch =
             !search ||
-            String(a.name || "").toLowerCase().includes(search) ||
-            String(a.title || "").toLowerCase().includes(search) ||
-            String(a.department || "").toLowerCase().includes(search) ||
-            String(a.description || "").toLowerCase().includes(search);
+            searchableText.includes(search);
 
         const matchesCategory =
             !categoryId ||
             String(a.category_id) === String(categoryId);
-
-        const backendRole =
-            type === "Student"
-                ? "student"
-                : type === "Alumni"
-                    ? "alumni"
-                    : "";
 
         const matchesType =
             !backendRole ||
@@ -317,28 +392,39 @@ function renderFeatured() {
 
         return (
             a.status === "approved" &&
-            a.featured == 1 &&
+            Number(a.featured) === 1 &&
             matchesSearch &&
             matchesCategory &&
             matchesType
         );
     });
 
-    document.getElementById("featuredGrid").innerHTML =
+    featuredGrid.innerHTML =
         list.length
             ? list.map(achvCard).join("")
-            : `<p style="color:var(--muted)">
-                No achievements match your search.
-               </p>`;
+            : `
+                <p style="color:var(--muted)">
+                    No achievements match your search.
+                </p>
+            `;
 }
 
 function renderTop() {
+    const topList = document.getElementById("topList");
+
+    if (!topList) return;
+
     const top = [...achievements]
-        .sort((a, b) => Number(b.points || 0) - Number(a.points || 0))
+        .filter(a => a.status === "approved")
+        .sort(
+            (a, b) =>
+                Number(b.points || 0) -
+                Number(a.points || 0)
+        )
         .slice(0, 5);
 
-    document.getElementById("topList").innerHTML =
-        top.map((a, index) => `
+    topList.innerHTML = top.length
+        ? top.map((a, index) => `
             <div class="top-row">
 
                 <div class="rank">
@@ -355,7 +441,10 @@ function renderTop() {
                     </div>
 
                     <div class="m">
-                        ${escapeHTML(a.department || "LDRP-ITR")}
+                        ${escapeHTML(
+                            a.department ||
+                            "LDRP-ITR"
+                        )}
                     </div>
                 </div>
 
@@ -364,42 +453,75 @@ function renderTop() {
                 </div>
 
             </div>
-        `).join("");
-
-    if (!top.length) {
-        document.getElementById("topList").innerHTML =
-            `<p style="color:#8b92a1">No verified achievements yet.</p>`;
-    }
+        `).join("")
+        : `
+            <p style="color:#8b92a1">
+                No verified achievements yet.
+            </p>
+        `;
 }
 
 function renderRecent() {
+    const recentGrid = document.getElementById("recentGrid");
+
+    if (!recentGrid) return;
+
     const recent = [...achievements]
-        .sort(
-            (a, b) =>
-                new Date(b.achievement_date || b.created_at) -
-                new Date(a.achievement_date || a.created_at)
-        )
+        .filter(a => a.status === "approved")
+        .sort((a, b) => {
+            const dateA = new Date(
+                a.achievement_date ||
+                a.created_at ||
+                0
+            );
+
+            const dateB = new Date(
+                b.achievement_date ||
+                b.created_at ||
+                0
+            );
+
+            return dateB - dateA;
+        })
         .slice(0, 3);
 
-    document.getElementById("recentGrid").innerHTML =
+    recentGrid.innerHTML =
         recent.length
             ? recent.map(achvCard).join("")
-            : `<p style="color:var(--muted)">
-                No recent achievements.
-               </p>`;
+            : `
+                <p style="color:var(--muted)">
+                    No recent achievements.
+                </p>
+            `;
 }
 
 function renderAlumni() {
+    const grid = document.getElementById("alumniGrid");
+
+    if (!grid) return;
+
     const alumni = achievements.filter(
-        a => a.role === "alumni"
+        a =>
+            String(a.role || "").toLowerCase() === "alumni" &&
+            a.status === "approved"
     );
 
-    document.getElementById("alumniGrid").innerHTML =
-        alumni.length
-            ? alumni.map(achvCard).join("")
-            : `<p style="color:var(--muted)">
-                No alumni achievements available yet.
-               </p>`;
+    grid.innerHTML = alumni.length
+        ? alumni.map(achvCard).join("")
+        : `
+            <div class="alumni-empty">
+                <div class="alumni-empty-icon">✦</div>
+
+                <h3>
+                    Alumni achievements are on their way
+                </h3>
+
+                <p>
+                    Distinguished alumni achievements will appear here
+                    as they are verified and published.
+                </p>
+            </div>
+        `;
 }
 
 function renderPublic() {
@@ -422,68 +544,136 @@ async function loadPublic() {
     } catch (error) {
         console.error(error);
 
-        document.getElementById("featuredGrid").innerHTML = `
-            <p style="color:#9c3c3c">
-                ${escapeHTML(error.message)}
-            </p>
-        `;
+        const featuredGrid =
+            document.getElementById("featuredGrid");
+
+        if (featuredGrid) {
+            featuredGrid.innerHTML = `
+                <p style="color:#9c3c3c">
+                    ${escapeHTML(error.message)}
+                </p>
+            `;
+        }
     }
 }
 
-document
-    .getElementById("searchInput")
-    .addEventListener("input", renderFeatured);
+function setupPublicListeners() {
+    document
+        .getElementById("searchInput")
+        ?.addEventListener(
+            "input",
+            renderFeatured
+        );
 
-document
-    .getElementById("filterCat")
-    .addEventListener("change", renderFeatured);
+    document
+        .getElementById("filterCat")
+        ?.addEventListener(
+            "change",
+            renderFeatured
+        );
 
-document
-    .getElementById("filterType")
-    .addEventListener("change", renderFeatured);
-
-
-/* =========================
-   AUTH
-========================= */
+    document
+        .getElementById("filterType")
+        ?.addEventListener(
+            "change",
+            renderFeatured
+        );
+}
 
 function openAuth(mode) {
     authMode = mode;
 
-    document.getElementById("authScreen").classList.remove("hide");
+    const authScreen =
+        document.getElementById("authScreen");
 
-    document.getElementById("authTitle").textContent =
-        mode === "signup" ? "Create account" : "Sign in";
+    if (!authScreen) return;
 
-    document.getElementById("authSub").textContent =
-        mode === "signup"
-            ? "Join the LDRP-ITR achievement community."
-            : "Access your achievement dashboard.";
+    authScreen.classList.remove("hide");
+
+    const title =
+        document.getElementById("authTitle");
+
+    const sub =
+        document.getElementById("authSub");
+
+    if (title) {
+        title.textContent =
+            mode === "signup"
+                ? "Create account"
+                : mode === "forgot"
+                    ? "Forgot password"
+                    : "Sign in";
+    }
+
+    if (sub) {
+        sub.textContent =
+            mode === "signup"
+                ? "Join the LDRP-ITR achievement community."
+                : mode === "forgot"
+                    ? "Enter your registered student or alumni email."
+                    : "Access your achievement dashboard.";
+    }
 
     updateAuthFields();
 }
 
 function updateAuthFields() {
-    const card = document.querySelector(".auth-card");
-    if (!card) return;
+    const emailInput =
+        document.getElementById("authEmail");
 
-    const emailField = document.getElementById("authEmail")?.closest(".auth-field");
-    const passwordField = document.getElementById("authPassword")?.closest(".auth-field");
-    const originalRoleField = document.querySelector(".role-grid")?.closest(".auth-field");
-    const note = document.querySelector(".auth-note");
-    const submitButton = document.querySelector(".auth-submit");
-    const forgotLink = document.getElementById("forgotPasswordLink");
+    const passwordInput =
+        document.getElementById("authPassword");
 
-    if (forgotLink) forgotLink.style.display = authMode === "login" ? "block" : "none";
+    const emailField =
+        emailInput?.closest(".auth-field");
 
-    document.getElementById("resetExtra")?.remove();
+    const passwordField =
+        passwordInput?.closest(".auth-field");
 
-    if (emailField) emailField.classList.remove("hide");
-    if (passwordField) passwordField.classList.remove("hide");
-    if (originalRoleField) originalRoleField.classList.remove("hide");
+    const originalRoleField =
+        document
+            .querySelector("#authScreen .role-grid")
+            ?.closest(".auth-field");
+
+    const note =
+        document.querySelector(".auth-note");
+
+    const submitButton =
+        document.querySelector(".auth-submit");
+
+    const forgotLink =
+        document.getElementById("forgotPasswordLink");
+
+    if (forgotLink) {
+        forgotLink.style.display =
+            authMode === "login"
+                ? "block"
+                : "none";
+    }
+
+    document
+        .getElementById("resetExtra")
+        ?.remove();
+
+    document
+        .getElementById("signupExtra")
+        ?.remove();
+
+    if (emailField) {
+        emailField.classList.remove("hide");
+    }
+
+    if (passwordField) {
+        passwordField.classList.remove("hide");
+    }
+
+    if (originalRoleField) {
+        originalRoleField.classList.remove("hide");
+    }
 
     if (authMode === "signup") {
-        let extra = document.getElementById("signupExtra");
+        let extra =
+            document.getElementById("signupExtra");
 
         if (!extra) {
             extra = document.createElement("div");
@@ -497,127 +687,248 @@ function updateAuthFields() {
         extra.innerHTML = `
             <div class="auth-field">
                 <label>FULL NAME</label>
-                <input id="authName" placeholder="Your full name">
+                <input
+                    id="authName"
+                    placeholder="Your full name"
+                >
             </div>
 
             <div class="auth-field">
                 <label>ACCOUNT TYPE</label>
+
                 <div class="role-grid">
-                    <button type="button" class="role-btn active"
-                        onclick="pickRole(this,'student')">Student</button>
-                    <button type="button" class="role-btn"
-                        onclick="pickRole(this,'alumni')">Alumni</button>
+                    <button
+                        type="button"
+                        class="role-btn active"
+                        onclick="pickRole(this,'student')"
+                    >
+                        Student
+                    </button>
+
+                    <button
+                        type="button"
+                        class="role-btn"
+                        onclick="pickRole(this,'alumni')"
+                    >
+                        Alumni
+                    </button>
                 </div>
             </div>
 
             <div class="auth-field">
                 <label>ENROLLMENT NUMBER</label>
-                <input id="authEnrollment" placeholder="Enrollment number">
+
+                <input
+                    id="authEnrollment"
+                    placeholder="Enrollment number"
+                >
             </div>
 
             <div class="auth-field">
                 <label>DEPARTMENT</label>
-                <input id="authDepartment" placeholder="Computer Engineering">
+
+                <input
+                    id="authDepartment"
+                    placeholder="Computer Engineering"
+                >
             </div>
 
             <div class="auth-field">
                 <label>SEMESTER / BATCH</label>
-                <input id="authSemester" placeholder="6th Semester / 2026">
+
+                <input
+                    id="authSemester"
+                    placeholder="6th Semester / 2026"
+                >
             </div>
         `;
 
-        if (originalRoleField) originalRoleField.classList.add("hide");
-        if (note) note.textContent = "Student and Alumni accounts can be created here.";
+        if (originalRoleField) {
+            originalRoleField.classList.add("hide");
+        }
+
+        if (note) {
+            note.textContent =
+                "Student and Alumni accounts can be created here.";
+        }
+
         if (submitButton) {
-            submitButton.textContent = "Create Account";
-            submitButton.onclick = registerAccount;
+            submitButton.textContent =
+                "Create Account";
+
+            submitButton.onclick =
+                registerAccount;
         }
 
         pickedRole = "student";
+
         return;
     }
 
-    document.getElementById("signupExtra")?.remove();
-
     if (authMode === "forgot") {
-        if (originalRoleField) originalRoleField.classList.add("hide");
-        if (passwordField) passwordField.classList.add("hide");
-
-        document.getElementById("authEmail").value = "";
-
-        document.getElementById("authTitle").textContent = "Forgot password";
-        document.getElementById("authSub").textContent =
-            "Enter your registered student or alumni email.";
-        if (note) note.textContent =
-            "If the account exists, a reset link valid for 30 minutes will be sent.";
-        if (submitButton) {
-            submitButton.textContent = "Send Reset Link";
-            submitButton.onclick = requestForgotPassword;
+        if (originalRoleField) {
+            originalRoleField.classList.add("hide");
         }
+
+        if (passwordField) {
+            passwordField.classList.add("hide");
+        }
+
+        if (emailInput) {
+            emailInput.value = "";
+        }
+
+        if (note) {
+            note.textContent =
+                "If the account exists, a reset link valid for 30 minutes will be sent.";
+        }
+
+        if (submitButton) {
+            submitButton.textContent =
+                "Send Reset Link";
+
+            submitButton.onclick =
+                requestForgotPassword;
+        }
+
         return;
     }
 
     if (authMode === "reset") {
-        if (originalRoleField) originalRoleField.classList.add("hide");
-        if (emailField) emailField.classList.add("hide");
-        if (passwordField) passwordField.classList.add("hide");
+        if (originalRoleField) {
+            originalRoleField.classList.add("hide");
+        }
 
-        let extra = document.getElementById("resetExtra");
+        if (emailField) {
+            emailField.classList.add("hide");
+        }
+
+        if (passwordField) {
+            passwordField.classList.add("hide");
+        }
+
+        let extra =
+            document.getElementById("resetExtra");
+
         if (!extra) {
             extra = document.createElement("div");
             extra.id = "resetExtra";
-            if (emailField) emailField.before(extra);
+
+            if (emailField) {
+                emailField.before(extra);
+            }
         }
 
         extra.innerHTML = `
             <div class="auth-field">
                 <label>NEW PASSWORD</label>
-                <input type="password" id="resetPassword" placeholder="At least 8 characters">
+
+                <input
+                    type="password"
+                    id="resetPassword"
+                    placeholder="At least 8 characters"
+                >
             </div>
+
             <div class="auth-field">
                 <label>CONFIRM NEW PASSWORD</label>
-                <input type="password" id="resetConfirm" placeholder="Repeat new password">
+
+                <input
+                    type="password"
+                    id="resetConfirm"
+                    placeholder="Repeat new password"
+                >
             </div>
         `;
 
-        if (note) note.textContent = "Reset links expire after 30 minutes and can only be used once.";
-        if (submitButton) {
-            submitButton.textContent = "Set New Password";
-            submitButton.onclick = () => resetPasswordFromLink(window.currentResetToken);
+        if (note) {
+            note.textContent =
+                "Reset links expire after 30 minutes and can only be used once.";
         }
+
+        if (submitButton) {
+            submitButton.textContent =
+                "Set New Password";
+
+            submitButton.onclick =
+                () => resetPasswordFromLink(
+                    window.currentResetToken
+                );
+        }
+
         return;
     }
 
-    if (originalRoleField) originalRoleField.classList.remove("hide");
-    if (emailField) emailField.classList.remove("hide");
-    if (passwordField) passwordField.classList.remove("hide");
-
-    document.getElementById("authTitle").textContent = "Sign in";
-    document.getElementById("authSub").textContent =
-        "Access your achievement dashboard.";
-
-    if (note) note.textContent = "Use your registered LDRP-ITR account credentials.";
-    if (submitButton) {
-        submitButton.textContent = "Continue to Dashboard";
-        submitButton.onclick = doLogin;
+    if (originalRoleField) {
+        originalRoleField.classList.remove("hide");
     }
 
-    const roleButtons = document.querySelectorAll(".role-grid .role-btn");
-    roleButtons.forEach(button => button.classList.remove("active"));
-    if (roleButtons[0]) roleButtons[0].classList.add("active");
+    if (emailField) {
+        emailField.classList.remove("hide");
+    }
+
+    if (passwordField) {
+        passwordField.classList.remove("hide");
+    }
+
+    const title =
+        document.getElementById("authTitle");
+
+    const sub =
+        document.getElementById("authSub");
+
+    if (title) {
+        title.textContent = "Sign in";
+    }
+
+    if (sub) {
+        sub.textContent =
+            "Access your achievement dashboard.";
+    }
+
+    if (note) {
+        note.textContent =
+            "Use your registered LDRP-ITR account credentials.";
+    }
+
+    if (submitButton) {
+        submitButton.textContent =
+            "Continue to Dashboard";
+
+        submitButton.onclick =
+            doLogin;
+    }
+
+    const roleButtons =
+        document.querySelectorAll(
+            "#authScreen .role-grid .role-btn"
+        );
+
+    roleButtons.forEach(button => {
+        button.classList.remove("active");
+    });
+
+    if (roleButtons[0]) {
+        roleButtons[0].classList.add("active");
+    }
+
     pickedRole = "student";
 }
 
 function closeAuth() {
     document
         .getElementById("authScreen")
-        .classList.add("hide");
+        ?.classList.add("hide");
 }
 
 function pickRole(button, role) {
     document
-        .querySelectorAll(".role-grid .role-btn")
-        .forEach(b => b.classList.remove("active"));
+        .querySelectorAll(
+            "#authScreen .role-grid .role-btn"
+        )
+        .forEach(b => {
+            b.classList.remove("active");
+        });
 
     button.classList.add("active");
 
@@ -627,12 +938,12 @@ function pickRole(button, role) {
 async function doLogin() {
     const email =
         document.getElementById("authEmail")
-            .value
+            ?.value
             .trim();
 
     const password =
         document.getElementById("authPassword")
-            .value;
+            ?.value || "";
 
     if (!email || !password) {
         toast("Enter your email and password.");
@@ -640,13 +951,14 @@ async function doLogin() {
     }
 
     try {
-        const result = await apiPost(
-            "auth/login.php",
-            {
-                email,
-                password
-            }
-        );
+        const result =
+            await apiPost(
+                "auth/login.php",
+                {
+                    email,
+                    password
+                }
+            );
 
         currentUser = result.data;
 
@@ -673,12 +985,12 @@ async function registerAccount() {
 
     const email =
         document.getElementById("authEmail")
-            .value
+            ?.value
             .trim();
 
     const password =
         document.getElementById("authPassword")
-            .value;
+            ?.value || "";
 
     const enrollment =
         document.getElementById("authEnrollment")
@@ -696,12 +1008,16 @@ async function registerAccount() {
             .trim();
 
     if (!name || !email || !password) {
-        toast("Name, email and password are required.");
+        toast(
+            "Name, email and password are required."
+        );
         return;
     }
 
     if (password.length < 8) {
-        toast("Password must contain at least 8 characters.");
+        toast(
+            "Password must contain at least 8 characters."
+        );
         return;
     }
 
@@ -712,20 +1028,29 @@ async function registerAccount() {
                 name,
                 email,
                 password,
-                role: pickedRole === "alumni"
-                    ? "alumni"
-                    : "student",
+                role:
+                    pickedRole === "alumni"
+                        ? "alumni"
+                        : "student",
                 enrollment_no: enrollment,
                 department,
                 semester
             }
         );
 
-        toast("Account created. Please sign in.");
+        toast(
+            "Account created. Please sign in."
+        );
 
         setTimeout(() => {
             openAuth("login");
-            document.getElementById("authEmail").value = email;
+
+            const input =
+                document.getElementById("authEmail");
+
+            if (input) {
+                input.value = email;
+            }
         }, 800);
 
     } catch (error) {
@@ -735,12 +1060,19 @@ async function registerAccount() {
 
 function showForgotPassword() {
     authMode = "forgot";
-    document.getElementById("authScreen").classList.remove("hide");
+
+    document
+        .getElementById("authScreen")
+        ?.classList.remove("hide");
+
     updateAuthFields();
 }
 
 async function requestForgotPassword() {
-    const email = document.getElementById("authEmail").value.trim();
+    const email =
+        document.getElementById("authEmail")
+            ?.value
+            .trim();
 
     if (!email) {
         toast("Enter your registered email.");
@@ -748,13 +1080,25 @@ async function requestForgotPassword() {
     }
 
     try {
-        const result = await apiPost("auth/forgot-password.php", { email });
+        const result =
+            await apiPost(
+                "auth/forgot-password.php",
+                { email }
+            );
+
         toast(result.message);
 
         setTimeout(() => {
             openAuth("login");
-            document.getElementById("authEmail").value = email;
+
+            const input =
+                document.getElementById("authEmail");
+
+            if (input) {
+                input.value = email;
+            }
         }, 1800);
+
     } catch (error) {
         toast(error.message);
     }
@@ -763,33 +1107,68 @@ async function requestForgotPassword() {
 function showResetPassword(token) {
     window.currentResetToken = token;
     authMode = "reset";
-    document.getElementById("authScreen").classList.remove("hide");
+
+    document
+        .getElementById("authScreen")
+        ?.classList.remove("hide");
+
     updateAuthFields();
 }
 
 async function resetPasswordFromLink(token) {
-    const password = document.getElementById("resetPassword")?.value || "";
-    const confirm = document.getElementById("resetConfirm")?.value || "";
+    const password =
+        document.getElementById("resetPassword")
+            ?.value || "";
+
+    const confirm =
+        document.getElementById("resetConfirm")
+            ?.value || "";
 
     if (!password || !confirm) {
-        toast("Enter and confirm your new password.");
+        toast(
+            "Enter and confirm your new password."
+        );
+        return;
+    }
+
+    if (password.length < 8) {
+        toast(
+            "Password must contain at least 8 characters."
+        );
+        return;
+    }
+
+    if (password !== confirm) {
+        toast(
+            "New passwords do not match."
+        );
         return;
     }
 
     try {
-        const result = await apiPost("auth/reset-password.php", {
-            token,
-            password,
-            confirm_password: confirm
-        });
+        const result =
+            await apiPost(
+                "auth/reset-password.php",
+                {
+                    token,
+                    password,
+                    confirm_password: confirm
+                }
+            );
 
         toast(result.message);
-        window.history.replaceState({}, document.title, window.location.pathname);
+
+        window.history.replaceState(
+            {},
+            document.title,
+            window.location.pathname
+        );
 
         setTimeout(() => {
             window.currentResetToken = null;
             openAuth("login");
         }, 1000);
+
     } catch (error) {
         toast(error.message);
     }
@@ -809,18 +1188,17 @@ async function logout() {
 
     document
         .getElementById("appShell")
-        .classList.add("hide");
+        ?.classList.add("hide");
 
-    document.getElementById("publicSite")
-        .style.display = "block";
+    const publicSite =
+        document.getElementById("publicSite");
+
+    if (publicSite) {
+        publicSite.style.display = "block";
+    }
 
     await loadPublic();
 }
-
-
-/* =========================
-   SESSION CHECK
-========================= */
 
 async function checkSession() {
     try {
@@ -847,13 +1225,11 @@ async function checkSession() {
     }
 }
 
-
-/* =========================
-   TOAST
-========================= */
-
 function toast(message) {
-    const t = document.getElementById("toast");
+    const t =
+        document.getElementById("toast");
+
+    if (!t) return;
 
     t.textContent = message;
 
@@ -861,29 +1237,28 @@ function toast(message) {
 
     clearTimeout(window.toastTimer);
 
-    window.toastTimer = setTimeout(() => {
-        t.classList.remove("show");
-    }, 2800);
+    window.toastTimer =
+        setTimeout(() => {
+            t.classList.remove("show");
+        }, 2800);
 }
 
-
-/* =========================
-   DASHBOARD
-========================= */
-
 function buildDashboard() {
+    const roleLabel =
+        document.getElementById("roleLabel");
 
-    document.getElementById("roleLabel").textContent =
-        currentUser.role === "student"
-            ? "STUDENT DASHBOARD"
-            : currentUser.role === "alumni"
-                ? "ALUMNI DASHBOARD"
-                : currentUser.role === "mentor"
-                    ? "MENTOR DASHBOARD"
-                    : "ADMINISTRATION";
+    if (roleLabel) {
+        roleLabel.textContent =
+            currentUser.role === "student"
+                ? "STUDENT DASHBOARD"
+                : currentUser.role === "alumni"
+                    ? "ALUMNI DASHBOARD"
+                    : currentUser.role === "mentor"
+                        ? "MENTOR DASHBOARD"
+                        : "ADMINISTRATION";
+    }
 
     const menus = {
-
         student: [
             ["overview", "Overview", "📊"],
             ["submit", "Submit Achievement", "➕"],
@@ -914,16 +1289,19 @@ function buildDashboard() {
             ["featured", "Featured Selection", "⭐"],
             ["profile", "Profile & Security", "👤"]
         ]
-
     };
 
-    const menu = menus[currentUser.role] || menus.student;
+    const menu =
+        menus[currentUser.role] ||
+        menus.student;
 
     const sidebar =
         document.getElementById("sidebar");
 
-    sidebar.innerHTML = menu.map(
-        (item, index) => `
+    if (!sidebar) return;
+
+    sidebar.innerHTML =
+        menu.map((item, index) => `
             <button
                 data-tab="${item[0]}"
                 class="sidebar-btn ${index === 0 ? "active" : ""}"
@@ -932,17 +1310,17 @@ function buildDashboard() {
                 <span>${item[2]}</span>
                 ${item[1]}
             </button>
-        `
-    ).join("");
+        `).join("");
 
     switchTab(menu[0][0]);
 }
 
 function switchTab(tab, button) {
-
     document
         .querySelectorAll(".sidebar-btn")
-        .forEach(b => b.classList.remove("active"));
+        .forEach(b => {
+            b.classList.remove("active");
+        });
 
     if (button) {
         button.classList.add("active");
@@ -957,11 +1335,20 @@ function switchTab(tab, button) {
     const main =
         document.getElementById("appMain");
 
+    if (!main) return;
+
     if (tab === "profile") {
         return accountView(main);
     }
 
-    if (tab === "users") {
+    if (
+        tab === "users" &&
+        (
+            currentUser.role === "mentor"
+            ||
+            currentUser.role === "admin"
+        )
+    ) {
         return manageUsersView(main);
     }
 
@@ -979,29 +1366,28 @@ function switchTab(tab, button) {
     return adminView(tab, main);
 }
 
-
-/* =========================
-   STUDENT / ALUMNI
-========================= */
-
 async function loadStudentStats() {
     const result =
-        await apiGet("dashboard/stats.php");
+        await apiGet(
+            "dashboard/stats.php"
+        );
 
     return result.data || {};
 }
 
 async function loadMyAchievements() {
     const result =
-        await apiGet("achievements/my-achievements.php");
+        await apiGet(
+            "achievements/my-achievements.php"
+        );
 
-    return result.data || [];
+    return Array.isArray(result.data)
+        ? result.data
+        : [];
 }
 
 async function studentView(tab, main) {
-
     if (tab === "overview") {
-
         main.innerHTML = `
             <h1>
                 Welcome back, ${escapeHTML(currentUser.name)}
@@ -1039,11 +1425,13 @@ async function studentView(tab, main) {
         `;
 
         try {
-            const [stats, mine] =
-                await Promise.all([
-                    loadStudentStats(),
-                    loadMyAchievements()
-                ]);
+            const [
+                stats,
+                mine
+            ] = await Promise.all([
+                loadStudentStats(),
+                loadMyAchievements()
+            ]);
 
             document.getElementById("studentKpis")
                 .innerHTML = `
@@ -1109,9 +1497,7 @@ async function studentView(tab, main) {
         return;
     }
 
-
     if (tab === "submit") {
-
         main.innerHTML = `
             <h1>Submit an Achievement</h1>
 
@@ -1212,23 +1598,30 @@ async function studentView(tab, main) {
 
         document
             .getElementById("f_file")
-            .addEventListener("change", function() {
+            ?.addEventListener(
+                "change",
+                function() {
+                    const file =
+                        this.files[0];
 
-                const file = this.files[0];
+                    const fileName =
+                        document.getElementById(
+                            "fileName"
+                        );
 
-                document.getElementById("fileName")
-                    .textContent =
-                    file
-                        ? file.name
-                        : "";
-            });
+                    if (fileName) {
+                        fileName.textContent =
+                            file
+                                ? file.name
+                                : "";
+                    }
+                }
+            );
 
         return;
     }
 
-
     if (tab === "mine") {
-
         main.innerHTML = `
             <h1>My Achievements</h1>
 
@@ -1237,21 +1630,20 @@ async function studentView(tab, main) {
             </p>
 
             <div class="panel">
-
                 <div class="tablewrap">
                     Loading...
                 </div>
-
             </div>
         `;
 
         try {
-
             const mine =
                 await loadMyAchievements();
 
             document
-                .querySelector("#appMain .tablewrap")
+                .querySelector(
+                    "#appMain .tablewrap"
+                )
                 .innerHTML = `
                     <table>
 
@@ -1259,6 +1651,7 @@ async function studentView(tab, main) {
                             <th>Title</th>
                             <th>Category</th>
                             <th>Date</th>
+                            <th>Certificate</th>
                             <th>Status</th>
                         </tr>
 
@@ -1272,7 +1665,9 @@ async function studentView(tab, main) {
                                         </td>
 
                                         <td>
-                                            ${escapeHTML(a.category)}
+                                            ${escapeHTML(
+                                                a.category || "-"
+                                            )}
                                         </td>
 
                                         <td>
@@ -1280,7 +1675,9 @@ async function studentView(tab, main) {
                                         </td>
 
                                         <td>
-                                            ${certificateLink(a.certificate_path)}
+                                            ${certificateLink(
+                                                a.certificate_path
+                                            )}
                                         </td>
 
                                         <td>
@@ -1291,8 +1688,10 @@ async function studentView(tab, main) {
                                 `).join("")
                                 : `
                                     <tr>
-                                        <td colspan="4"
-                                            style="color:var(--muted)">
+                                        <td
+                                            colspan="5"
+                                            style="color:var(--muted)"
+                                        >
                                             Nothing submitted yet.
                                         </td>
                                     </tr>
@@ -1309,108 +1708,39 @@ async function studentView(tab, main) {
         return;
     }
 
-
     if (tab === "profile") {
-
-        main.innerHTML = `
-            <h1>Profile</h1>
-
-            <p class="sub">
-                Your details as they appear on the public portal.
-            </p>
-
-            <div class="panel formgrid">
-
-                <div>
-                    <label class="flabel">
-                        Full name
-                    </label>
-
-                    <input
-                        class="finput"
-                        id="profileName"
-                        value="${escapeHTML(currentUser.name || "")}"
-                    >
-                </div>
-
-                <div>
-                    <label class="flabel">
-                        Enrollment no.
-                    </label>
-
-                    <input
-                        class="finput"
-                        id="profileEnrollment"
-                        value="${escapeHTML(currentUser.enrollment_no || "")}"
-                    >
-                </div>
-
-                <div>
-                    <label class="flabel">
-                        Department
-                    </label>
-
-                    <input
-                        class="finput"
-                        id="profileDepartment"
-                        value="${escapeHTML(currentUser.department || "")}"
-                    >
-                </div>
-
-                <div>
-                    <label class="flabel">
-                        Semester / Batch
-                    </label>
-
-                    <input
-                        class="finput"
-                        id="profileSemester"
-                        value="${escapeHTML(currentUser.semester || "")}"
-                    >
-                </div>
-
-                <div>
-                    <label class="flabel">
-                        Email
-                    </label>
-
-                    <input
-                        class="finput"
-                        value="${escapeHTML(currentUser.email || "")}"
-                        disabled
-                    >
-                </div>
-
-            </div>
-
-            <button
-                class="btn btn-gold"
-                style="margin-top:18px;"
-                onclick="updateProfile()"
-            >
-                Save Profile
-            </button>
-        `;
-
-        return;
+        return accountView(main);
     }
 }
 
 function certificateLink(path) {
     if (!path) {
-        return `<span style="color:var(--muted)">Not uploaded</span>`;
+        return `
+            <span style="color:var(--muted)">
+                Not uploaded
+            </span>
+        `;
     }
 
-    const url = `backend/${String(path).replace(/^\/+/, "")}`;
-    const lower = String(path).toLowerCase();
-    const isImage = /\.(jpg|jpeg|png)$/i.test(lower);
+    const url =
+        `backend/${String(path).replace(/^\/+/, "")}`;
+
+    const lower =
+        String(path).toLowerCase();
+
+    const isImage =
+        /\.(jpg|jpeg|png)$/i.test(lower);
 
     return `
         <a
             href="${escapeHTML(url)}"
             target="_blank"
             rel="noopener noreferrer"
-            style="color:var(--gold);font-weight:700;text-decoration:none;"
+            style="
+                color:var(--gold);
+                font-weight:700;
+                text-decoration:none;
+            "
         >
             ${isImage ? "View Photo" : "View Certificate"}
         </a>
@@ -1430,7 +1760,7 @@ function rowLine(a) {
         ">
 
             <span>
-                ${escapeHTML(a.title)}
+                ${escapeHTML(a.title || "")}
             </span>
 
             ${certificateLink(a.certificate_path)}
@@ -1442,65 +1772,86 @@ function rowLine(a) {
 }
 
 function pill(status) {
+    const safeStatus =
+        String(status || "pending").toLowerCase();
 
     const label =
-        status.charAt(0).toUpperCase() +
-        status.slice(1);
+        safeStatus.charAt(0).toUpperCase() +
+        safeStatus.slice(1);
 
     return `
-        <span class="status-pill st-${status}">
-            ${label}
+        <span class="status-pill st-${escapeHTML(safeStatus)}">
+            ${escapeHTML(label)}
         </span>
     `;
 }
 
 async function submitAchievement() {
-
     const title =
         document.getElementById("f_title")
-            .value
+            ?.value
             .trim();
 
     const category =
         document.getElementById("f_cat")
-            .value;
+            ?.value;
 
     const description =
         document.getElementById("f_desc")
-            .value
+            ?.value
             .trim();
 
     const file =
         document.getElementById("f_file")
-            .files[0];
+            ?.files[0];
 
     if (!title) {
-        toast("Add a title before submitting.");
+        toast(
+            "Add a title before submitting."
+        );
         return;
     }
 
     if (!description) {
-        toast("Please describe your achievement.");
+        toast(
+            "Please describe your achievement."
+        );
         return;
     }
 
     if (file && file.size > 5 * 1024 * 1024) {
-        toast("Certificate must be 5 MB or smaller.");
+        toast(
+            "Certificate must be 5 MB or smaller."
+        );
         return;
     }
 
-    const formData = new FormData();
+    const formData =
+        new FormData();
 
-    formData.append("title", title);
-    formData.append("description", description);
-    formData.append("category_id", category);
+    formData.append(
+        "title",
+        title
+    );
+
+    formData.append(
+        "description",
+        description
+    );
+
+    formData.append(
+        "category_id",
+        category
+    );
 
     if (file) {
-        formData.append("certificate", file);
+        formData.append(
+            "certificate",
+            file
+        );
     }
 
     try {
-
         await api(
             "achievements/create.php",
             {
@@ -1523,101 +1874,224 @@ async function submitAchievement() {
 function accountView(main) {
     main.innerHTML = `
         <h1>Profile & Security</h1>
-        <p class="sub">Update your account details and change your password securely.</p>
+
+        <p class="sub">
+            Update your account details and change your password securely.
+        </p>
 
         <div class="panel formgrid">
+
             <div>
-                <label class="flabel">Full name</label>
-                <input class="finput" id="profileName"
-                    value="${escapeHTML(currentUser.name || "")}">
+                <label class="flabel">
+                    Full name
+                </label>
+
+                <input
+                    class="finput"
+                    id="profileName"
+                    value="${escapeHTML(
+                        currentUser.name || ""
+                    )}"
+                >
             </div>
 
             <div>
-                <label class="flabel">Enrollment no.</label>
-                <input class="finput" id="profileEnrollment"
-                    value="${escapeHTML(currentUser.enrollment_no || "")}">
+                <label class="flabel">
+                    Enrollment no.
+                </label>
+
+                <input
+                    class="finput"
+                    id="profileEnrollment"
+                    value="${escapeHTML(
+                        currentUser.enrollment_no || ""
+                    )}"
+                >
             </div>
 
             <div>
-                <label class="flabel">Department</label>
-                <input class="finput" id="profileDepartment"
-                    value="${escapeHTML(currentUser.department || "")}">
+                <label class="flabel">
+                    Department
+                </label>
+
+                <input
+                    class="finput"
+                    id="profileDepartment"
+                    value="${escapeHTML(
+                        currentUser.department || ""
+                    )}"
+                >
             </div>
 
             <div>
-                <label class="flabel">Semester / Batch</label>
-                <input class="finput" id="profileSemester"
-                    value="${escapeHTML(currentUser.semester || "")}">
+                <label class="flabel">
+                    Semester / Batch
+                </label>
+
+                <input
+                    class="finput"
+                    id="profileSemester"
+                    value="${escapeHTML(
+                        currentUser.semester || ""
+                    )}"
+                >
             </div>
 
             <div>
-                <label class="flabel">Email</label>
-                <input class="finput" value="${escapeHTML(currentUser.email || "")}" disabled>
+                <label class="flabel">
+                    Email
+                </label>
+
+                <input
+                    class="finput"
+                    value="${escapeHTML(
+                        currentUser.email || ""
+                    )}"
+                    disabled
+                >
             </div>
 
             <div>
-                <label class="flabel">Role</label>
-                <input class="finput" value="${escapeHTML(getRoleLabel(currentUser.role))}" disabled>
+                <label class="flabel">
+                    Role
+                </label>
+
+                <input
+                    class="finput"
+                    value="${escapeHTML(
+                        getRoleLabel(
+                            currentUser.role
+                        )
+                    )}"
+                    disabled
+                >
             </div>
+
         </div>
 
         <div style="margin-top:16px;">
-            <button class="btn btn-gold" onclick="updateProfile()">Save Profile</button>
+            <button
+                class="btn btn-gold"
+                onclick="updateProfile()"
+            >
+                Save Profile
+            </button>
         </div>
 
-        <div class="panel" style="margin-top:22px;">
+        <div
+            class="panel"
+            style="margin-top:22px;"
+        >
             <h3>Change Password</h3>
-            <p class="sub">Use your current password to set a new one.</p>
+
+            <p class="sub">
+                Use your current password to set a new one.
+            </p>
 
             <div class="formgrid">
+
                 <div>
-                    <label class="flabel">Current password</label>
-                    <input class="finput" type="password" id="currentPassword">
+                    <label class="flabel">
+                        Current password
+                    </label>
+
+                    <input
+                        class="finput"
+                        type="password"
+                        id="currentPassword"
+                    >
                 </div>
 
                 <div>
-                    <label class="flabel">New password</label>
-                    <input class="finput" type="password" id="newPassword"
-                        placeholder="At least 8 characters">
+                    <label class="flabel">
+                        New password
+                    </label>
+
+                    <input
+                        class="finput"
+                        type="password"
+                        id="newPassword"
+                        placeholder="At least 8 characters"
+                    >
                 </div>
 
                 <div>
-                    <label class="flabel">Confirm new password</label>
-                    <input class="finput" type="password" id="confirmPassword">
+                    <label class="flabel">
+                        Confirm new password
+                    </label>
+
+                    <input
+                        class="finput"
+                        type="password"
+                        id="confirmPassword"
+                    >
                 </div>
+
             </div>
 
             <div style="margin-top:16px;">
-                <button class="btn btn-gold" id="savePasswordBtn" onclick="changeMyPassword()">
+
+                <button
+                    class="btn btn-gold"
+                    id="savePasswordBtn"
+                    onclick="changeMyPassword()"
+                >
                     Save New Password
                 </button>
+
             </div>
         </div>
     `;
 }
 
 async function changeMyPassword() {
-    const currentInput = document.getElementById("currentPassword");
-    const newInput = document.getElementById("newPassword");
-    const confirmInput = document.getElementById("confirmPassword");
-    const button = document.getElementById("savePasswordBtn");
+    const currentInput =
+        document.getElementById(
+            "currentPassword"
+        );
 
-    const current = currentInput?.value || "";
-    const newPassword = newInput?.value || "";
-    const confirm = confirmInput?.value || "";
+    const newInput =
+        document.getElementById(
+            "newPassword"
+        );
+
+    const confirmInput =
+        document.getElementById(
+            "confirmPassword"
+        );
+
+    const button =
+        document.getElementById(
+            "savePasswordBtn"
+        );
+
+    const current =
+        currentInput?.value || "";
+
+    const newPassword =
+        newInput?.value || "";
+
+    const confirm =
+        confirmInput?.value || "";
 
     if (!current || !newPassword || !confirm) {
-        toast("Please fill all three password fields.");
+        toast(
+            "Please fill all three password fields."
+        );
         return;
     }
 
     if (newPassword.length < 8) {
-        toast("New password must contain at least 8 characters.");
+        toast(
+            "New password must contain at least 8 characters."
+        );
         return;
     }
 
     if (newPassword !== confirm) {
-        toast("New passwords do not match.");
+        toast(
+            "New passwords do not match."
+        );
         return;
     }
 
@@ -1627,57 +2101,82 @@ async function changeMyPassword() {
     }
 
     try {
-        const result = await apiPost("users/change-password.php", {
-            current_password: current,
-            new_password: newPassword,
-            confirm_password: confirm
-        });
+        const result =
+            await apiPost(
+                "users/change-password.php",
+                {
+                    current_password: current,
+                    new_password: newPassword,
+                    confirm_password: confirm
+                }
+            );
 
-        toast(result.message || "Password changed successfully.");
+        toast(
+            result.message ||
+            "Password changed successfully."
+        );
 
-        currentInput.value = "";
-        newInput.value = "";
-        confirmInput.value = "";
+        if (currentInput) {
+            currentInput.value = "";
+        }
+
+        if (newInput) {
+            newInput.value = "";
+        }
+
+        if (confirmInput) {
+            confirmInput.value = "";
+        }
+
     } catch (error) {
-        toast(error.message || "Password change failed.");
+        toast(
+            error.message ||
+            "Password change failed."
+        );
+
     } finally {
         if (button) {
             button.disabled = false;
-            button.textContent = "Save New Password";
+            button.textContent =
+                "Save New Password";
         }
     }
 }
 
 async function updateProfile() {
-
     const name =
-        document.getElementById("profileName")
-            .value
-            .trim();
+        document.getElementById(
+            "profileName"
+        )?.value.trim();
 
     const enrollment =
-        document.getElementById("profileEnrollment")
-            .value
-            .trim();
+        document.getElementById(
+            "profileEnrollment"
+        )?.value.trim();
 
     const department =
-        document.getElementById("profileDepartment")
-            .value
-            .trim();
+        document.getElementById(
+            "profileDepartment"
+        )?.value.trim();
 
     const semester =
-        document.getElementById("profileSemester")
-            .value
-            .trim();
+        document.getElementById(
+            "profileSemester"
+        )?.value.trim();
+
+    if (!name) {
+        toast("Name is required.");
+        return;
+    }
 
     try {
-
         const result =
             await apiPost(
                 "users/profile.php",
                 {
                     name,
-                    enrollment_no: enrollment,
+                    enrollment_no:
+                        enrollment,
                     department,
                     semester
                 }
@@ -1686,7 +2185,8 @@ async function updateProfile() {
         currentUser = {
             ...currentUser,
             name,
-            enrollment_no: enrollment,
+            enrollment_no:
+                enrollment,
             department,
             semester
         };
@@ -1703,31 +2203,28 @@ async function updateProfile() {
     }
 }
 
-
-/* =========================
-   MENTOR
-========================= */
-
 async function mentorView(tab, main) {
-
     if (tab === "overview") {
-
         main.innerHTML = `
             <h1>
-                Welcome, ${escapeHTML(currentUser.name)}
+                Welcome, ${escapeHTML(
+                    currentUser.name
+                )}
             </h1>
 
             <p class="sub">
                 Review queue at a glance.
             </p>
 
-            <div class="kpis" id="mentorKpis">
+            <div
+                class="kpis"
+                id="mentorKpis"
+            >
                 Loading...
             </div>
         `;
 
         try {
-
             const result =
                 await apiGet(
                     "dashboard/stats.php"
@@ -1736,11 +2233,14 @@ async function mentorView(tab, main) {
             const stats =
                 result.data || {};
 
-            document.getElementById("mentorKpis")
+            document
+                .getElementById("mentorKpis")
                 .innerHTML = `
                     <div class="kpi">
                         <div class="n">
-                            ${Number(stats.pending || 0)}
+                            ${Number(
+                                stats.pending || 0
+                            )}
                         </div>
                         <div class="l">
                             Awaiting review
@@ -1749,7 +2249,9 @@ async function mentorView(tab, main) {
 
                     <div class="kpi">
                         <div class="n">
-                            ${Number(stats.approved || 0)}
+                            ${Number(
+                                stats.approved || 0
+                            )}
                         </div>
                         <div class="l">
                             Approved
@@ -1758,7 +2260,9 @@ async function mentorView(tab, main) {
 
                     <div class="kpi">
                         <div class="n">
-                            ${Number(stats.rejected || 0)}
+                            ${Number(
+                                stats.rejected || 0
+                            )}
                         </div>
                         <div class="l">
                             Rejected
@@ -1767,7 +2271,9 @@ async function mentorView(tab, main) {
 
                     <div class="kpi">
                         <div class="n">
-                            ${Number(stats.assigned_students || 0)}
+                            ${Number(
+                                stats.assigned_students || 0
+                            )}
                         </div>
                         <div class="l">
                             Assigned students
@@ -1782,9 +2288,7 @@ async function mentorView(tab, main) {
         return;
     }
 
-
     if (tab === "review") {
-
         main.innerHTML = `
             <h1>Review Queue</h1>
 
@@ -1800,17 +2304,20 @@ async function mentorView(tab, main) {
         `;
 
         try {
-
             const result =
                 await apiGet(
                     "achievements/review-queue.php"
                 );
 
             const pending =
-                result.data || [];
+                Array.isArray(result.data)
+                    ? result.data
+                    : [];
 
             document
-                .querySelector("#appMain .tablewrap")
+                .querySelector(
+                    "#appMain .tablewrap"
+                )
                 .innerHTML = `
                     <table>
 
@@ -1829,15 +2336,21 @@ async function mentorView(tab, main) {
                                     <tr>
 
                                         <td>
-                                            ${escapeHTML(a.name)}
+                                            ${escapeHTML(
+                                                a.name
+                                            )}
                                         </td>
 
                                         <td>
-                                            ${escapeHTML(a.title)}
+                                            ${escapeHTML(
+                                                a.title
+                                            )}
                                         </td>
 
                                         <td>
-                                            ${escapeHTML(a.category)}
+                                            ${escapeHTML(
+                                                a.category
+                                            )}
                                         </td>
 
                                         <td>
@@ -1845,7 +2358,9 @@ async function mentorView(tab, main) {
                                         </td>
 
                                         <td>
-                                            ${certificateLink(a.certificate_path)}
+                                            ${certificateLink(
+                                                a.certificate_path
+                                            )}
                                         </td>
 
                                         <td>
@@ -1853,14 +2368,14 @@ async function mentorView(tab, main) {
 
                                                 <button
                                                     class="mini-btn mini-approve"
-                                                    onclick="setStatus(${a.id},'approved')"
+                                                    onclick="setStatus(${Number(a.id)},'approved')"
                                                 >
                                                     Approve
                                                 </button>
 
                                                 <button
                                                     class="mini-btn mini-reject"
-                                                    onclick="setStatus(${a.id},'rejected')"
+                                                    onclick="setStatus(${Number(a.id)},'rejected')"
                                                 >
                                                     Reject
                                                 </button>
@@ -1872,8 +2387,10 @@ async function mentorView(tab, main) {
                                 `).join("")
                                 : `
                                     <tr>
-                                        <td colspan="6"
-                                            style="color:var(--muted)">
+                                        <td
+                                            colspan="6"
+                                            style="color:var(--muted)"
+                                        >
                                             Queue is clear.
                                         </td>
                                     </tr>
@@ -1890,9 +2407,7 @@ async function mentorView(tab, main) {
         return;
     }
 
-
     if (tab === "approved") {
-
         main.innerHTML = `
             <h1>Approved by Me</h1>
 
@@ -1906,16 +2421,20 @@ async function mentorView(tab, main) {
         `;
 
         try {
-
             const result =
                 await apiGet(
                     "achievements/review-queue.php?scope=reviewed"
                 );
 
             const records =
-                result.data || [];
+                Array.isArray(result.data)
+                    ? result.data
+                    : [];
 
-            document.querySelector("#appMain .panel")
+            document
+                .querySelector(
+                    "#appMain .panel"
+                )
                 .innerHTML =
                 records.length
                     ? records.map(rowLine).join("")
@@ -1932,19 +2451,19 @@ async function mentorView(tab, main) {
 }
 
 async function setStatus(id, status) {
-
     let points = 0;
     let rejectionReason = "";
 
     if (status === "approved") {
-
         const entered =
             prompt(
                 "Enter achievement points (0 - 1000):",
                 "50"
             );
 
-        if (entered === null) return;
+        if (entered === null) {
+            return;
+        }
 
         points = Number(entered);
 
@@ -1953,12 +2472,13 @@ async function setStatus(id, status) {
             points < 0 ||
             points > 1000
         ) {
-            toast("Points must be between 0 and 1000.");
+            toast(
+                "Points must be between 0 and 1000."
+            );
             return;
         }
 
     } else {
-
         rejectionReason =
             prompt(
                 "Enter the reason for rejection:"
@@ -1968,20 +2488,22 @@ async function setStatus(id, status) {
             rejectionReason === null ||
             !rejectionReason.trim()
         ) {
-            toast("Rejection reason is required.");
+            toast(
+                "Rejection reason is required."
+            );
             return;
         }
     }
 
     try {
-
         await apiPost(
             "achievements/update-status.php",
             {
                 achievement_id: id,
                 status,
                 points,
-                rejection_reason: rejectionReason
+                rejection_reason:
+                    rejectionReason
             }
         );
 
@@ -1998,6 +2520,7 @@ async function setStatus(id, status) {
         }
 
         await loadPublicAchievements();
+
         renderPublic();
 
     } catch (error) {
@@ -2005,141 +2528,245 @@ async function setStatus(id, status) {
     }
 }
 
-
-/* =========================
-   ADMIN
-========================= */
-
 async function manageUsersView(main) {
     main.innerHTML = `
         <h1>Manage Users</h1>
+
         <p class="sub">
-            Manage student and alumni accounts. ${currentUser.role === "admin"
-                ? "Admins can also reset passwords."
-                : "Mentors can delete student or alumni accounts as permitted."}
+            Manage student and alumni accounts.
         </p>
 
         <div class="panel">
-            <div class="tablewrap">Loading...</div>
+            <div class="tablewrap">
+                Loading...
+            </div>
         </div>
     `;
 
     try {
-        const result = await apiGet("users/list.php");
-        const users = result.data?.users || result.data || [];
+        const result =
+            await apiGet(
+                "users/list.php"
+            );
 
-        document.querySelector("#appMain .tablewrap").innerHTML = `
-            <table>
-                <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Department</th>
-                    <th>Achievements</th>
-                    <th>Status</th>
-                    <th>Action</th>
-                </tr>
+        const users =
+            result.data?.users ||
+            result.data ||
+            [];
 
-                ${users.length ? users.map(user => `
+        document
+            .querySelector(
+                "#appMain .tablewrap"
+            )
+            .innerHTML = `
+                <table>
+
                     <tr>
-                        <td>${escapeHTML(user.name)}</td>
-                        <td>${escapeHTML(user.email)}</td>
-                        <td>${escapeHTML(getRoleLabel(user.role))}</td>
-                        <td>${escapeHTML(user.department || "-")}</td>
-                        <td>${Number(user.achievement_count || 0)}</td>
-                        <td>${pill(user.status)}</td>
-                        <td>
-                            ${
-                                ["student", "alumni"].includes(user.role)
-                                ? `
-                                    <div class="row-actions">
-                                        <button class="mini-btn mini-reject"
-                                            onclick="deleteUserAccount(${user.id}, '${escapeHTML(user.name).replace(/'/g, "\\'")}')">
-                                            Delete
-                                        </button>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Department</th>
+                        <th>Achievements</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
 
+                    ${
+                        users.length
+                            ? users.map(user => `
+                                <tr>
+
+                                    <td>
+                                        ${escapeHTML(
+                                            user.name
+                                        )}
+                                    </td>
+
+                                    <td>
+                                        ${escapeHTML(
+                                            user.email
+                                        )}
+                                    </td>
+
+                                    <td>
+                                        ${escapeHTML(
+                                            getRoleLabel(
+                                                user.role
+                                            )
+                                        )}
+                                    </td>
+
+                                    <td>
+                                        ${escapeHTML(
+                                            user.department ||
+                                            "-"
+                                        )}
+                                    </td>
+
+                                    <td>
+                                        ${Number(
+                                            user.achievement_count ||
+                                            0
+                                        )}
+                                    </td>
+
+                                    <td>
+                                        ${pill(
+                                            user.status
+                                        )}
+                                    </td>
+
+                                    <td>
                                         ${
-                                            currentUser.role === "admin"
-                                            ? `
-                                                <button class="mini-btn mini-feature"
-                                                    onclick="adminResetUserPassword(${user.id}, '${escapeHTML(user.name).replace(/'/g, "\\'")}')">
-                                                    Reset Password
-                                                </button>
-                                            `
-                                            : ""
+                                            ["student", "alumni"]
+                                                .includes(
+                                                    user.role
+                                                )
+                                                ? `
+                                                    <div class="row-actions">
+
+                                                        ${
+                                                            currentUser.role === "admin"
+                                                                ? `
+                                                                    <button
+                                                                        class="mini-btn mini-reject"
+                                                                        onclick="deleteUserAccount(${Number(user.id)}, '${escapeHTML(user.name).replace(/'/g, "\\'")}')"
+                                                                    >
+                                                                        Delete
+                                                                    </button>
+
+                                                                    <button
+                                                                        class="mini-btn mini-feature"
+                                                                        onclick="adminResetUserPassword(${Number(user.id)}, '${escapeHTML(user.name).replace(/'/g, "\\'")}')"
+                                                                    >
+                                                                        Reset Password
+                                                                    </button>
+                                                                `
+                                                                : `
+                                                                    <span style="color:var(--muted)">
+                                                                        Student account
+                                                                    </span>
+                                                                `
+                                                        }
+
+                                                    </div>
+                                                `
+                                                : `
+                                                    <span style="color:var(--muted)">
+                                                        Management account
+                                                    </span>
+                                                `
                                         }
-                                    </div>
-                                `
-                                : `<span style="color:var(--muted)">Management account</span>`
-                            }
-                        </td>
-                    </tr>
-                `).join("") : `
-                    <tr>
-                        <td colspan="7" style="color:var(--muted)">
-                            No users found.
-                        </td>
-                    </tr>
-                `}
-            </table>
-        `;
+                                    </td>
+
+                                </tr>
+                            `).join("")
+                            : `
+                                <tr>
+                                    <td
+                                        colspan="7"
+                                        style="color:var(--muted)"
+                                    >
+                                        No users found.
+                                    </td>
+                                </tr>
+                            `
+                    }
+
+                </table>
+            `;
+
     } catch (error) {
         toast(error.message);
     }
 }
 
 async function deleteUserAccount(id, name) {
-    const confirmed = window.confirm(
-        `Delete ${name} permanently?\\n\\nThis removes the account, achievements, mentor assignment and uploaded certificate/photo files. This cannot be undone.`
-    );
+    const confirmed =
+        window.confirm(
+            `Delete ${name} permanently?\n\nThis removes the account, achievements, mentor assignment and uploaded certificate/photo files. This cannot be undone.`
+        );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+        return;
+    }
 
     try {
-        await apiPost("users/delete.php", { user_id: id });
-        toast("User deleted successfully.");
-        manageUsersView(document.getElementById("appMain"));
+        await apiPost(
+            "users/delete.php",
+            {
+                user_id: id
+            }
+        );
+
+        toast(
+            "User deleted successfully."
+        );
+
+        manageUsersView(
+            document.getElementById(
+                "appMain"
+            )
+        );
+
     } catch (error) {
         toast(error.message);
     }
 }
 
 async function adminResetUserPassword(id, name) {
-    const password = window.prompt(
-        `Set a new password for ${name}:`
-    );
+    const password =
+        window.prompt(
+            `Set a new password for ${name}:`
+        );
 
-    if (password === null) return;
-
-    if (password.length < 8) {
-        toast("Password must contain at least 8 characters.");
+    if (password === null) {
         return;
     }
 
-    const confirm = window.prompt("Confirm the new password:");
-    if (confirm === null) return;
+    if (password.length < 8) {
+        toast(
+            "Password must contain at least 8 characters."
+        );
+        return;
+    }
+
+    const confirm =
+        window.prompt(
+            "Confirm the new password:"
+        );
+
+    if (confirm === null) {
+        return;
+    }
 
     if (password !== confirm) {
-        toast("Passwords do not match.");
+        toast(
+            "Passwords do not match."
+        );
         return;
     }
 
     try {
-        await apiPost("users/reset-password.php", {
-            user_id: id,
-            password
-        });
+        await apiPost(
+            "users/reset-password.php",
+            {
+                user_id: id,
+                password
+            }
+        );
 
-        toast("Password reset successfully.");
+        toast(
+            "Password reset successfully."
+        );
+
     } catch (error) {
         toast(error.message);
     }
 }
 
 async function adminView(tab, main) {
-
     if (tab === "overview") {
-
         main.innerHTML = `
             <h1>Admin Overview</h1>
 
@@ -2147,7 +2774,10 @@ async function adminView(tab, main) {
                 Portal-wide activity and health.
             </p>
 
-            <div class="kpis" id="adminKpis">
+            <div
+                class="kpis"
+                id="adminKpis"
+            >
                 Loading...
             </div>
 
@@ -2158,26 +2788,36 @@ async function adminView(tab, main) {
         `;
 
         try {
-
             const [
                 statsResult,
                 achievementsResult
             ] = await Promise.all([
-                apiGet("dashboard/stats.php"),
-                apiGet("admin/achievements.php")
+                apiGet(
+                    "dashboard/stats.php"
+                ),
+                apiGet(
+                    "admin/achievements.php"
+                )
             ]);
 
             const stats =
                 statsResult.data || {};
 
             const all =
-                achievementsResult.data || [];
+                Array.isArray(
+                    achievementsResult.data
+                )
+                    ? achievementsResult.data
+                    : [];
 
-            document.getElementById("adminKpis")
+            document
+                .getElementById("adminKpis")
                 .innerHTML = `
                     <div class="kpi">
                         <div class="n">
-                            ${Number(stats.total || 0)}
+                            ${Number(
+                                stats.total || 0
+                            )}
                         </div>
                         <div class="l">
                             Total achievements
@@ -2186,7 +2826,9 @@ async function adminView(tab, main) {
 
                     <div class="kpi">
                         <div class="n">
-                            ${Number(stats.pending || 0)}
+                            ${Number(
+                                stats.pending || 0
+                            )}
                         </div>
                         <div class="l">
                             Pending review
@@ -2195,7 +2837,9 @@ async function adminView(tab, main) {
 
                     <div class="kpi">
                         <div class="n">
-                            ${Number(stats.users || 0)}
+                            ${Number(
+                                stats.users || 0
+                            )}
                         </div>
                         <div class="l">
                             Registered users
@@ -2204,7 +2848,9 @@ async function adminView(tab, main) {
 
                     <div class="kpi">
                         <div class="n">
-                            ${Number(stats.categories || 0)}
+                            ${Number(
+                                stats.categories || 0
+                            )}
                         </div>
                         <div class="l">
                             Active categories
@@ -2212,9 +2858,14 @@ async function adminView(tab, main) {
                     </div>
                 `;
 
-            document.querySelector("#appMain .panel")
+            document
+                .querySelector(
+                    "#appMain .panel"
+                )
                 .innerHTML = `
-                    <h3>Recent submissions</h3>
+                    <h3>
+                        Recent submissions
+                    </h3>
 
                     ${
                         all.length
@@ -2237,118 +2888,11 @@ async function adminView(tab, main) {
         return;
     }
 
-
     if (tab === "users") {
-
-        main.innerHTML = `
-            <h1>Manage Users</h1>
-
-            <p class="sub">
-                Students, alumni, mentors, and administrators.
-            </p>
-
-            <div class="panel">
-
-                <div class="tablewrap">
-                    Loading...
-                </div>
-
-            </div>
-        `;
-
-        try {
-
-            const result =
-                await apiGet("users/list.php");
-
-            const users =
-                result.data?.users ||
-                result.data ||
-                [];
-
-            document
-                .querySelector("#appMain .tablewrap")
-                .innerHTML = `
-                    <table>
-
-                        <tr>
-                            <th>Name</th>
-                            <th>Role</th>
-                            <th>Department</th>
-                            <th>Status</th>
-                            <th>Action</th>
-                        </tr>
-
-                        ${
-                            users.map(user => `
-                                <tr>
-
-                                    <td>
-                                        ${escapeHTML(user.name)}
-                                    </td>
-
-                                    <td>
-                                        ${escapeHTML(
-                                            getRoleLabel(user.role)
-                                        )}
-                                    </td>
-
-                                    <td>
-                                        ${escapeHTML(
-                                            user.department || "-"
-                                        )}
-                                    </td>
-
-                                    <td>
-                                        ${pill(user.status)}
-                                    </td>
-
-                                    <td>
-
-                                        ${
-                                            Number(user.id) !==
-                                            Number(currentUser.id)
-                                                ? `
-                                                    <button
-                                                        class="mini-btn mini-feature"
-                                                        onclick="changeUserStatus(
-                                                            ${user.id},
-                                                            '${user.status === "active" ? "blocked" : "active"}'
-                                                        )"
-                                                    >
-                                                        ${
-                                                            user.status === "active"
-                                                                ? "Block"
-                                                                : "Activate"
-                                                        }
-                                                    </button>
-                                                `
-                                                : `
-                                                    <span style="color:var(--muted)">
-                                                        Current account
-                                                    </span>
-                                                `
-                                        }
-
-                                    </td>
-
-                                </tr>
-                            `).join("")
-                        }
-
-                    </table>
-                `;
-
-        } catch (error) {
-            toast(error.message);
-        }
-
-        return;
+        return manageUsersView(main);
     }
 
-
     if (tab === "all") {
-
         main.innerHTML = `
             <h1>All Achievements</h1>
 
@@ -2366,17 +2910,20 @@ async function adminView(tab, main) {
         `;
 
         try {
-
             const result =
                 await apiGet(
                     "admin/achievements.php"
                 );
 
             const all =
-                result.data || [];
+                Array.isArray(result.data)
+                    ? result.data
+                    : [];
 
             document
-                .querySelector("#appMain .tablewrap")
+                .querySelector(
+                    "#appMain .tablewrap"
+                )
                 .innerHTML = `
                     <table>
 
@@ -2395,23 +2942,33 @@ async function adminView(tab, main) {
                                     <tr>
 
                                         <td>
-                                            ${escapeHTML(a.name)}
+                                            ${escapeHTML(
+                                                a.name
+                                            )}
                                         </td>
 
                                         <td>
-                                            ${escapeHTML(a.title)}
+                                            ${escapeHTML(
+                                                a.title
+                                            )}
                                         </td>
 
                                         <td>
-                                            ${escapeHTML(a.category)}
+                                            ${escapeHTML(
+                                                a.category
+                                            )}
                                         </td>
 
                                         <td>
-                                            ${pill(a.status)}
+                                            ${pill(
+                                                a.status
+                                            )}
                                         </td>
 
                                         <td>
-                                            ${certificateLink(a.certificate_path)}
+                                            ${certificateLink(
+                                                a.certificate_path
+                                            )}
                                         </td>
 
                                         <td>
@@ -2423,14 +2980,14 @@ async function adminView(tab, main) {
                                                         ? `
                                                             <button
                                                                 class="mini-btn mini-approve"
-                                                                onclick="setStatus(${a.id},'approved')"
+                                                                onclick="setStatus(${Number(a.id)},'approved')"
                                                             >
                                                                 Approve
                                                             </button>
 
                                                             <button
                                                                 class="mini-btn mini-reject"
-                                                                onclick="setStatus(${a.id},'rejected')"
+                                                                onclick="setStatus(${Number(a.id)},'rejected')"
                                                             >
                                                                 Reject
                                                             </button>
@@ -2439,10 +2996,12 @@ async function adminView(tab, main) {
                                                             ? `
                                                                 <button
                                                                     class="mini-btn mini-feature"
-                                                                    onclick="toggleFeature(${a.id})"
+                                                                    onclick="toggleFeature(${Number(a.id)})"
                                                                 >
                                                                     ${
-                                                                        Number(a.featured)
+                                                                        Number(
+                                                                            a.featured
+                                                                        )
                                                                             ? "Unfeature"
                                                                             : "Feature"
                                                                     }
@@ -2459,8 +3018,10 @@ async function adminView(tab, main) {
                                 `).join("")
                                 : `
                                     <tr>
-                                        <td colspan="6"
-                                            style="color:var(--muted)">
+                                        <td
+                                            colspan="6"
+                                            style="color:var(--muted)"
+                                        >
                                             No achievements found.
                                         </td>
                                     </tr>
@@ -2477,9 +3038,7 @@ async function adminView(tab, main) {
         return;
     }
 
-
     if (tab === "categories") {
-
         main.innerHTML = `
             <h1>Categories</h1>
 
@@ -2499,18 +3058,32 @@ async function adminView(tab, main) {
                         </tr>
 
                         ${
-                            CATEGORIES.map(category => `
-                                <tr>
-                                    <td>
-                                        ${category.ic}
-                                        ${escapeHTML(category.n)}
-                                    </td>
+                            CATEGORIES.map(
+                                category => `
+                                    <tr>
+                                        <td>
+                                            <span
+                                                style="
+                                                    display:inline-block;
+                                                    width:28px;
+                                                "
+                                            >
+                                                ${category.ic}
+                                            </span>
 
-                                    <td>
-                                        ${category.c}
-                                    </td>
-                                </tr>
-                            `).join("")
+                                            ${escapeHTML(
+                                                category.n
+                                            )}
+                                        </td>
+
+                                        <td>
+                                            ${Number(
+                                                category.c || 0
+                                            )}
+                                        </td>
+                                    </tr>
+                                `
+                            ).join("")
                         }
 
                     </table>
@@ -2523,9 +3096,7 @@ async function adminView(tab, main) {
         return;
     }
 
-
     if (tab === "featured") {
-
         main.innerHTML = `
             <h1>Featured Selection</h1>
 
@@ -2539,17 +3110,24 @@ async function adminView(tab, main) {
         `;
 
         try {
-
             const result =
                 await apiGet(
                     "admin/achievements.php"
                 );
 
             const approved =
-                (result.data || [])
-                    .filter(a => a.status === "approved");
+                (
+                    Array.isArray(result.data)
+                        ? result.data
+                        : []
+                ).filter(
+                    a => a.status === "approved"
+                );
 
-            document.querySelector("#appMain .panel")
+            document
+                .querySelector(
+                    "#appMain .panel"
+                )
                 .innerHTML =
                 approved.length
                     ? approved.map(a => `
@@ -2568,23 +3146,29 @@ async function adminView(tab, main) {
                                     font-weight:600;
                                     font-size:13.5px;
                                 ">
-                                    ${escapeHTML(a.title)}
+                                    ${escapeHTML(
+                                        a.title
+                                    )}
                                 </div>
 
                                 <div style="
                                     font-size:12px;
                                     color:var(--muted);
                                 ">
-                                    ${escapeHTML(a.name)}
+                                    ${escapeHTML(
+                                        a.name
+                                    )}
                                     ·
-                                    ${escapeHTML(a.category)}
+                                    ${escapeHTML(
+                                        a.category
+                                    )}
                                 </div>
 
                             </div>
 
                             <button
                                 class="mini-btn mini-feature"
-                                onclick="toggleFeature(${a.id})"
+                                onclick="toggleFeature(${Number(a.id)})"
                             >
                                 ${
                                     Number(a.featured)
@@ -2608,9 +3192,7 @@ async function adminView(tab, main) {
 }
 
 async function changeUserStatus(id, status) {
-
     try {
-
         await apiPost(
             "users/update-status.php",
             {
@@ -2633,9 +3215,7 @@ async function changeUserStatus(id, status) {
 }
 
 async function toggleFeature(id) {
-
     try {
-
         const result =
             await apiPost(
                 "achievements/toggle-featured.php",
@@ -2657,51 +3237,61 @@ async function toggleFeature(id) {
     }
 }
 
-
-/* =========================
-   AUTH PASSWORD FIELD FIX
-========================= */
-
 function prepareAuth() {
-
     const passwordInput =
         document.querySelector(
             '#authScreen input[type="password"]'
         );
 
-    if (passwordInput) {
-        passwordInput.id = "authPassword";
+    if (
+        passwordInput &&
+        !passwordInput.id
+    ) {
+        passwordInput.id =
+            "authPassword";
     }
 
     const emailInput =
-        document.getElementById("authEmail");
+        document.getElementById(
+            "authEmail"
+        );
 
     if (emailInput) {
         emailInput.value = "";
     }
+}
 
-    const originalRoleField =
-        document
-            .querySelector(".role-grid")
-            ?.closest(".auth-field");
+async function startApp() {
+    prepareAuth();
+    setupPublicListeners();
 
-    if (originalRoleField) {
-        originalRoleField.classList.remove("hide");
+    const resetTokenFromUrl =
+        new URLSearchParams(
+            window.location.search
+        ).get("reset");
+
+    if (
+        resetTokenFromUrl &&
+        /^[a-f0-9]{64}$/i.test(
+            resetTokenFromUrl
+        )
+    ) {
+        showResetPassword(
+            resetTokenFromUrl
+        );
     }
+
+    await loadPublic();
+    await checkSession();
 }
 
-
-/* =========================
-   START
-========================= */
-
-prepareAuth();
-
-const resetTokenFromUrl = new URLSearchParams(window.location.search).get("reset");
-if (resetTokenFromUrl && /^[a-f0-9]{64}$/.test(resetTokenFromUrl)) {
-    showResetPassword(resetTokenFromUrl);
+if (
+    document.readyState === "loading"
+) {
+    document.addEventListener(
+        "DOMContentLoaded",
+        startApp
+    );
+} else {
+    startApp();
 }
-
-loadPublic();
-
-checkSession();
